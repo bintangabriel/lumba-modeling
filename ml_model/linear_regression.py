@@ -27,7 +27,7 @@ class LumbaLinearRegression:
 
         return {
             'model': lr,
-            'mean_absolute_error': mae
+            'mean_absolute_error': f'{mae:.4f}'
         }
 
     def get_model(self) -> LinearRegression:
