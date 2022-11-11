@@ -13,8 +13,8 @@ class LumbaLinearRegression:
         self.dataframe = dataframe
 
     def train_model(self, train_column_name: str, target_column_name:str, train_size: float = 0.8) -> dict:
-        x = self.dataframe[train_column_name]
-        y = self.dataframe[target_column_name]
+        x = self.dataframe[train_column_name].to_numpy().reshape(-1, 1)
+        y = self.dataframe[target_column_name].to_numpy().reshape(-1, 1)
         x_train, x_test, y_train, y_test = train_test_split(x, y, train_size=train_size)
         
         lr = LinearRegression()
