@@ -1,12 +1,12 @@
 import asyncio
-import httpx
+import json
 from django.http import JsonResponse
 import pandas as pd
 from ml_model.linear_regression import LumbaLinearRegression
 import requests
 import joblib
 
-async def asynctrain(df, training_record):  
+async def asynctrain(df, training_record, model_metadata):  
 
     # update training record to 'in progress'
     url = 'http://127.0.0.1:8000/modeling/updaterecord/'
@@ -14,14 +14,17 @@ async def asynctrain(df, training_record):
     record = requests.post(url, json=json)
     print("training with record id "+ str(record.json()['id']) + " in progress")
 
-    # for num in range(1,6):
-    #   await asyncio.sleep(delay=2)
-    #   print("sleep", num)
-    
     # train model
     LR = LumbaLinearRegression(df)
     response = LR.train_model(train_column_name='arr_flights', target_column_name='carrier_delay')
-    mlmodel = joblib.dump(response['model'], 'mlmodel.pkl')
+    
+    # save model to pkl format
+    model_saved_name = f"{model_metadata['model_name']}.pkl"
+    joblib.dump(response['model'], model_saved_name)
+
+    # save model
+    url = 'http://127.0.0.1:8000/modeling/save/'
+    requests.post(url, data=model_metadata, files={'file': open(model_saved_name, 'rb')})
     
     # update training record to 'completed'
     url = 'http://127.0.0.1:8000/modeling/updaterecord/'
@@ -33,6 +36,7 @@ async def asynctrain(df, training_record):
 # {'id': 5, 'status': 'accepted'}
 async def async_train_endpoint(request):
     try:
+      model_metadata = request.POST.dict()
       file = request.FILES['file']
     except:
       return JsonResponse({'message': "input error"})
@@ -47,5 +51,5 @@ async def async_train_endpoint(request):
       'id' : record.json()['id'],
       'status' : record.json()['status'],
     }  
-    asyncio.gather(asynctrain(df, training_record))
+    asyncio.gather(asynctrain(df, training_record, model_metadata))
     return JsonResponse(training_record)
