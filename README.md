@@ -3,7 +3,7 @@ run django app as an ASGI
 
 in development: 
 `pip install uvicorn`
-`uvicorn --reload modeling.asgi:application`
+`uvicorn --reload modeling.asgi:application --port 7000`
 
 in production:
 `pip install uvicorn`
