@@ -15,8 +15,10 @@ async def asynctrain(df, training_record, model_metadata):
     print("training with record id "+ str(record.json()['id']) + " in progress")
 
     # train model
-    LR = LumbaLinearRegression(df)
-    response = LR.train_model(train_column_name=model_metadata['feature'], target_column_name=model_metadata['target'])
+    if model_metadata['method'] == 'REGRESSION':
+      if model_metadata['algorithm'] == 'LINEAR':
+        LR = LumbaLinearRegression(df)
+        response = LR.train_model(train_column_name=model_metadata['feature'], target_column_name=model_metadata['target'])
     
     # save model to pkl format
     model_saved_name = f"{model_metadata['model_name']}.pkl"
