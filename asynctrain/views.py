@@ -16,7 +16,7 @@ async def asynctrain(df, training_record, model_metadata):
 
     # train model
     LR = LumbaLinearRegression(df)
-    response = LR.train_model(train_column_name='arr_flights', target_column_name='carrier_delay')
+    response = LR.train_model(train_column_name=model_metadata['feature'], target_column_name=model_metadata['target'])
     
     # save model to pkl format
     model_saved_name = f"{model_metadata['model_name']}.pkl"
