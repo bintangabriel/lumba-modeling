@@ -1,10 +1,10 @@
-enable concurrency in a server
-run django app as an ASGI
+run django app as an ASGI to enable asynchronous in a server
 
-in development: 
-`pip install uvicorn`
+1. create virtual environment  
+`virtualenv venv`  
+2. activate virtual environment  
+`.\venv\scripts\activate`  
+3. install requirements    
+`pip install -r requirements.txt`  
+4. run server  
 `uvicorn --reload modeling.asgi:application --port 7000`
-
-in production:
-`pip install uvicorn`
-`gunicorn myproject.asgi:application -k uvicorn.workers.UvicornWorker`
