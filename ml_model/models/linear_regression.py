@@ -4,7 +4,7 @@ from sklearn.metrics import mean_absolute_error
 
 from pandas.core.frame import DataFrame
 
-from typing import Any
+from typing import Any, Optional
 
 class LumbaLinearRegression:
     model: LinearRegression
@@ -30,8 +30,11 @@ class LumbaLinearRegression:
             'mean_absolute_error': f'{mae:.4f}'
         }
 
-    def get_model(self) -> LinearRegression:
-        return self.model
+    def get_model(self) -> Optional[LinearRegression]:
+        try:
+            return self.model
+        except AttributeError:
+            return None
 
     def predict(self, data_target: Any) -> Any:
         lr = self.get_model()
