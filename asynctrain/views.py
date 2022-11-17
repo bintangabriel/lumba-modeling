@@ -2,7 +2,7 @@ import asyncio
 import json
 from django.http import JsonResponse
 import pandas as pd
-from ml_model.linear_regression import LumbaLinearRegression
+from ml_model.models.linear_regression import LumbaLinearRegression
 import requests
 import joblib
 
