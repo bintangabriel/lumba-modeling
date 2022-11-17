@@ -7,7 +7,7 @@ from pandas.core.frame import DataFrame
 from typing import Any
 
 class LumbaLinearRegression:
-    model: LinearRegression = None
+    model: LinearRegression
 
     def __init__(self, dataframe: DataFrame) -> None:
         self.dataframe = dataframe
