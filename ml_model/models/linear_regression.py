@@ -13,6 +13,11 @@ class LumbaLinearRegression:
         self.dataframe = dataframe
 
     def train_model(self, train_column_name: str, target_column_name:str, train_size: float = 0.8) -> dict:
+        if self.dataframe[train_column_name].dtype not in ["int64", "float64"] or self.dataframe[target_column_name].dtype not in ["int64", "float64"]:
+                return {
+                    'error': 'Kolom yang boleh dipilih hanyalah kolom dengan data numerik saja. Silakan pilih kolom yang benar.'
+                }
+        
         x = self.dataframe[train_column_name].to_numpy().reshape(-1, 1)
         y = self.dataframe[target_column_name].to_numpy().reshape(-1, 1)
         x_train, x_test, y_train, y_test = train_test_split(x, y, train_size=train_size)
