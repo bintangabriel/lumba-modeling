@@ -18,7 +18,7 @@ class LumbaDecisionTreeClassifier:
         
         # check if the columns selected are valid for Decision Tree process
         for col in x.columns:
-            if x[col].dtype not in ["int64", "float64"]:
+            if y.dtype not in ["int64", "float64"] or x[col].dtype not in ["int64", "float64"]:
                 return {
                     'error': 'Kolom yang boleh dipilih hanyalah kolom dengan data numerik saja. Silakan pilih kolom yang benar atau gunakan encoding pada data categorical.'
                 }
