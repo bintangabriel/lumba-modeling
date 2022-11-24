@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from django.http import JsonResponse
 import pandas as pd
 from ml_model.models.linear_regression import LumbaLinearRegression
@@ -37,6 +38,7 @@ async def asynctrain(df, training_record, model_metadata):
     url = 'http://127.0.0.1:8000/modeling/updaterecord/'
     json = {'id': training_record['id'], 'status':'completed'}
     record = requests.post(url, json=json)
+    os.remove(model_saved_name)
     print("training with record id "+ str(record.json()['id']) + " completed")
 
 # this function will return record in json 
