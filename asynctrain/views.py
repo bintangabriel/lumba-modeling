@@ -3,6 +3,7 @@ import json
 from django.http import JsonResponse
 import pandas as pd
 from ml_model.models.linear_regression import LumbaLinearRegression
+from ml_model.models.decision_tree import LumbaDecisionTreeClassifier
 import requests
 import joblib
 
@@ -19,6 +20,10 @@ async def asynctrain(df, training_record, model_metadata):
       if model_metadata['algorithm'] == 'LINEAR':
         LR = LumbaLinearRegression(df)
         response = LR.train_model(train_column_name=model_metadata['feature'], target_column_name=model_metadata['target'])
+    if model_metadata['method'] == 'CLASSIFICATION':
+      if model_metadata['algorithm'] == 'DECISION_TREE':
+        DT = LumbaDecisionTreeClassifier(df)
+        response = DT.train_model(train_column_names=model_metadata['feature'].split(','), target_column_name=model_metadata['target'])
     
     # save model to pkl format
     model_saved_name = f"{model_metadata['model_name']}.pkl"
@@ -43,7 +48,7 @@ async def async_train_endpoint(request):
     except:
       return JsonResponse({'message': "input error"})
     df = pd.read_csv(file)
-
+    
     # create training record in main service db
     url = 'http://127.0.0.1:8000/modeling/createrecord/'
     json = {'status':'accepted'}
