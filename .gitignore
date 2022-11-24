@@ -168,3 +168,5 @@ migrations/
 
 # ignore 'directory' (directory to save csv file)
 directory/
+
+*.pkl
