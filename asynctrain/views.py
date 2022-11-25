@@ -21,10 +21,14 @@ async def asynctrain(df, training_record, model_metadata):
       if model_metadata['algorithm'] == 'LINEAR':
         LR = LumbaLinearRegression(df)
         response = LR.train_model(train_column_name=model_metadata['feature'], target_column_name=model_metadata['target'])
+        model_metadata["metrics"] = "mean_absolute_error"
+        model_metadata["score"] = response["mean_absolute_error"]
     if model_metadata['method'] == 'CLASSIFICATION':
       if model_metadata['algorithm'] == 'DECISION_TREE':
         DT = LumbaDecisionTreeClassifier(df)
         response = DT.train_model(train_column_names=model_metadata['feature'].split(','), target_column_name=model_metadata['target'])
+        model_metadata["metrics"] = "accuracy_score"
+        model_metadata["score"] = response["accuracy_score"]
     
     # save model to pkl format
     model_saved_name = f"{model_metadata['model_name']}.pkl"
