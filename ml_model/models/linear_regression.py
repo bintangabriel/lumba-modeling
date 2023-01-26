@@ -4,7 +4,7 @@ from sklearn.metrics import mean_absolute_error
 
 from pandas.core.frame import DataFrame
 
-from typing import Any, Optional
+from typing import Any, Optional, Union, List
 
 class LumbaLinearRegression:
     model: LinearRegression
@@ -12,13 +12,29 @@ class LumbaLinearRegression:
     def __init__(self, dataframe: DataFrame) -> None:
         self.dataframe = dataframe
 
-    def train_model(self, train_column_name: str, target_column_name:str, train_size: float = 0.8) -> dict:
-        if self.dataframe[train_column_name].dtype not in ["int64", "float64"] or self.dataframe[target_column_name].dtype not in ["int64", "float64"]:
+    def train_model(self, train_column_name: Union[str, List[str]], target_column_name: str, train_size: float = 0.8) -> dict:
+        if self.dataframe[target_column_name].dtype not in ["int64", "float64"]:
+            return {
+                'error': 'Kolom yang boleh dipilih hanyalah kolom dengan data numerik saja. Silakan pilih kolom yang benar.'
+            }
+        
+        x = None
+        if type(train_column_name) == str:
+            if self.dataframe[train_column_name].dtype not in ["int64", "float64"]:
                 return {
                     'error': 'Kolom yang boleh dipilih hanyalah kolom dengan data numerik saja. Silakan pilih kolom yang benar.'
                 }
+            x = self.dataframe[train_column_name].to_numpy().reshape(-1, 1)
         
-        x = self.dataframe[train_column_name].to_numpy().reshape(-1, 1)
+        elif type(train_column_name) == list:
+            for col in train_column_name:
+                if self.dataframe[col].dtype not in ["int64", "float64"]:
+                    return {
+                        'error': 'Kolom yang boleh dipilih hanyalah kolom dengan data numerik saja. Silakan pilih kolom yang benar.'
+                    }
+
+            x = self.dataframe[train_column_name].to_numpy()
+
         y = self.dataframe[target_column_name].to_numpy().reshape(-1, 1)
         x_train, x_test, y_train, y_test = train_test_split(x, y, train_size=train_size)
         
