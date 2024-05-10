@@ -1,6 +1,11 @@
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 
 from pandas.core.frame import DataFrame
 
@@ -30,12 +35,18 @@ class LumbaDecisionTreeClassifier:
 
         y_pred = dt.predict(x_test)
         acc = accuracy_score(y_true=y_test, y_pred=y_pred)
+        f1 = f1_score(y_true=y_test, y_pred=y_pred, average='micro')
+        precision = precision_score(y_true=y_test, y_pred=y_pred, average='micro')
+        recall = recall_score(y_true=y_test, y_pred=y_pred, average='micro')
 
         self.model = dt
 
         return {
             'model': dt,
-            'accuracy_score': f'{acc*100:.4f}'
+            'accuracy_score': f'{acc*100:.4f}',
+            'f1_score': f'{f1:.4f}',
+            'precision_score': f'{precision:.4f}',
+            'recall_score': f'{recall:.4f}',
         }
 
     def get_model(self) -> Optional[DecisionTreeClassifier]:

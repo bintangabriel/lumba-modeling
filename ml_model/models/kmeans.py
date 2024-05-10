@@ -25,11 +25,15 @@ class LumbaKMeans:
         km_model = KMeans(n_clusters=k)
         y_kmeans= km_model.fit_predict(x)
 
+        self.dataframe = x
         self.model = km_model
+
+        df_with_labels = self.dataframe.copy()
+        df_with_labels['labels_predicted'] = y_kmeans
 
         return {
             'model': km_model,
-            'labels_predicted': y_kmeans,
+            'labels_predicted': df_with_labels,
         }
 
     def get_model(self) -> Optional[KMeans]:

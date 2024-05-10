@@ -19,5 +19,5 @@ from asynctrain import urls as train_urls
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('train/', include(train_urls)),
+    path('train/', include(train_urls))
 ]
