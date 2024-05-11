@@ -18,3 +18,9 @@ Lumba.ai provides several Machine Learning models that can be used by user depen
 > *References*:
 > * https://corporatefinanceinstitute.com/resources/data-science/decision-tree/
 > * https://www.kdnuggets.com/2020/01/decision-tree-algorithm-explained.html
+
+
+# Documented library used before push
+```
+pip freeze > requirements.txt
+```
