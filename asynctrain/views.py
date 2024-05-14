@@ -15,7 +15,9 @@ from json import dumps
 import numpy as np
 from modeling import settings
 import time
-from obseg_views import *
+from .obseg_views import *
+import io
+import zipfile
 
 async def asyncforecastingtrain(df, training_record, model_forecasting_metadata):  
 
@@ -169,5 +171,9 @@ async def async_train_endpoint(request):
       asyncio.gather(asynctrain(df, training_record, model_metadata))
       return JsonResponse(training_record)
     else:
-      asyncio.gather(asyncobjectsegmentationtrain(file, training_record, model_metadata))
+      # asyncio.gather(asyncobjectsegmentationtrain(file, training_record, model_metadata))
+      print('this is the metadata: ', model_metadata)
+      print(f'this is the file: {request.FILES}')
+      print(zipfile.is_zipfile(file))
+      await asyncio.sleep(20)
       return JsonResponse(training_record)
