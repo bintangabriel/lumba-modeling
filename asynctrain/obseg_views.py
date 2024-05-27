@@ -5,17 +5,12 @@ import torch
 from torch.utils.data import DataLoader, random_split
 import numpy as np
 from datetime import datetime
-
 from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
-
 import torchmetrics as TM
 import random
-# from ml_model.models import ReadDataset
-
 from ml_model.models.unet import UNet
-
 import os
 import zipfile
 from io import BytesIO
@@ -29,8 +24,6 @@ pixel_metric = TM.classification.BinaryAccuracy().to(DEVICE)
 precision = TM.classification.BinaryPrecision().to(DEVICE)
 recall = TM.classification.BinaryRecall().to(DEVICE)
 dice_metric = TM.classification.BinaryF1Score().to(DEVICE)
-
-
 
 class ReadDataset():
     def __init__(self, zip_file, image_transform=None, mask_transform=None):
@@ -75,8 +68,8 @@ class ReadDataset():
 
 
 async def asyncobjectsegmentationtrain(dataset, training_record, model_metadata):
-  # TODO: Fill with Object Segmentation code train code
   
+  # Get model that will be used
   model_name = model_metadata['model_name']
   model = ''
 
