@@ -153,7 +153,7 @@ async def asynctrain(df, training_record, model_metadata):
 async def async_train_endpoint(request):
     try:
       model_metadata = request.POST.dict()
-      file = request.FILES['file']
+      dataset = request.FILES.get('file')
     except:
       return JsonResponse({'message': "input error"})
       # create training record in main service db
@@ -171,9 +171,10 @@ async def async_train_endpoint(request):
       asyncio.gather(asynctrain(df, training_record, model_metadata))
       return JsonResponse(training_record)
     else:
-      # asyncio.gather(asyncobjectsegmentationtrain(file, training_record, model_metadata))
+      asyncio.gather(asyncobjectsegmentationtrain(dataset, training_record, model_metadata))
       print('this is the metadata: ', model_metadata)
       print(f'this is the file: {request.FILES}')
-      print(zipfile.is_zipfile(file))
-      await asyncio.sleep(20)
+      with zipfile.ZipFile(dataset, 'r') as z:
+        for img_filename in z.namelist():
+          print(img_filename)
       return JsonResponse(training_record)

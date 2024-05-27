@@ -1,236 +1,284 @@
-# from torch.utils.data import Dataset
-# import numpy as np
-# import torWchvision.transforms as transforms
-# from PIL import Image
-# import torch
-# import h5py
+import pandas as pd
+from torchvision import transforms
+from PIL import Image
+import torch
+from torch.utils.data import DataLoader, random_split
+import numpy as np
+from datetime import datetime
 
-# import pandas as pd
-# from torchvision import transforms
-# from PIL import Image
-# import torch
-# import matplotlib.pyplot as plt
-# from torch.utils.data import DataLoader
-# import numpy as np
-# from torchvision.transforms.functional import to_pil_image
+from tqdm import tqdm
+import torch.nn as nn
+import torch.optim as optim
 
-# from tqdm import tqdm
-# import torch.nn as nn
-# import torch.optim as optim
+import torchmetrics as TM
+import random
+# from ml_model.models import ReadDataset
 
-# from dataset import ReadDataset
-# from ml_model.models import UNet
+from ml_model.models.unet import UNet
 
-# import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+import os
+import zipfile
+from io import BytesIO
 
-# DEVICE = torch.device("cuda")
 
-# async def asyncobjectsegmentationtrain(dataset, training_record, model_metadata):
-#   # TODO: Fill with Object Segmentation code train code
-#   # dataset will be represent user's dataset (still on zip)
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-#   model = UNet(in_channels=3, out_channels=1).to(DEVICE)
+DEVICE = torch.device("cuda")
+iou = TM.classification.BinaryJaccardIndex().to(DEVICE)
+pixel_metric = TM.classification.BinaryAccuracy().to(DEVICE)
+precision = TM.classification.BinaryPrecision().to(DEVICE)
+recall = TM.classification.BinaryRecall().to(DEVICE)
+dice_metric = TM.classification.BinaryF1Score().to(DEVICE)
 
-#   loss_fn = nn.BCEWithLogitsLoss() # cross entropy
-#   learning_rate = 1e-4
-#   optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9) # sgd
-#   scaler = torch.cuda.amp.GradScaler()
 
-#   for epoch in range(20):
-#     epoch_dice_score = 0
-#     epoch_accuracy = 0
-#     epoch_iou = 0
-#     loop = tqdm(train_loader)
-#     total_batches = len(loop)
 
-#     for batch_idx, (data, targets) in enumerate(loop):
-#         data = data.to(DEVICE)
-#         targets = targets.to(DEVICE)
-#         with torch.cuda.amp.autocast():
-#             predictions = model(data)
-#             loss = loss_fn(predictions, targets)
+class ReadDataset():
+    def __init__(self, zip_file, image_transform=None, mask_transform=None):
+      self.zip_file = zip_file
+      self.image_transform = image_transform
+      self.mask_transform = mask_transform
+      self.images = []
+      self.masks = []
 
-#         optimizer.zero_grad()
-#         scaler.scale(loss).backward()
-#         scaler.step(optimizer)
-#         scaler.update()
-
-#         # Update metrics
-#         batch_dice_score = calculate_dice_score(predictions.detach(), targets)
-#         batch_accuracy = calculate_accuracy(predictions.detach(), targets)
-#         batch_iou = calculate_mean_iou(predictions.detach(), targets)
-#         epoch_dice_score += batch_dice_score.item()
-#         epoch_accuracy += batch_accuracy.item()
-#         epoch_iou += batch_iou.item()
-
-#     # Average metrics
-#     epoch_dice_score /= total_batches
-#     epoch_accuracy /= total_batches
-#     epoch_iou /= total_batches
+      # Filter to include only images with corresponding masks
+      with zipfile.ZipFile(zip_file, 'r') as z:
+        for img_filename in z.namelist():
+          if img_filename.endswith(('.jpg', '.jpeg', '.png')) and 'images/' in img_filename:
+            mask_filename = img_filename.replace('images/', 'masks/').replace('.jpg', '.png').replace('.jpeg', '.png')
+            if mask_filename in z.namelist():
+              self.images.append(img_filename)
+              self.masks.append(mask_filename)
+        
+      print(f"Loaded {len(self.images)} images and {len(self.masks)} masks.")
+    def __len__(self):
+        return len(self.images)
     
-#     # Early stopping and checkpointing
-#     val_loss = epoch_dice_score  # Assuming we consider dice score as validation loss
-#     stop_training, best_score, no_improve_count = early_stopping(val_loss, best_score, no_improve_count)
-#     if stop_training:
-#         print(f"Stopping early at epoch {epoch+1}")
-#         break
-    
-#     print(f"Epoch: {epoch+1}, Dice score: {epoch_dice_score:.4f}, Accuracy: {epoch_accuracy:.4f}, Mean IoU: {epoch_iou:.4f}")
-
-# # Save final model
-#   save_model_to_h5(model.state_dict(), 'final_model.h5')
-
-# def save_model_to_h5(model, filename):
-#     with h5py.File(filename, 'w') as f:
-#         for name, layer in model.named_parameters():
-#             f.create_dataset(name, data=layer.data.cpu().numpy())
-
-# # Define directories -> dataset user
-# img_dir = "data/train_val/train_val/JPEGImages"
-# mask_dir = "data/train_val/train_val/SegmentationClass"
-
-# # Initialize the dataset list
-# dataset = []
-
-# # Define supported file extensions
-# supported_image_extensions = (".jpg", ".jpeg")
-# supported_mask_extensions = (".png",)
-
-# # Helper function to get base filename without extension
-# def get_base_name(filename):
-#     return os.path.splitext(filename)[0]
-
-# # Iterate over image files and match with corresponding mask files
-# for img_filename in os.listdir(img_dir):
-#     if img_filename.endswith(supported_image_extensions):
-#         base_name = get_base_name(img_filename)
-#         img_path = os.path.join(img_dir, img_filename)
-#         mask_filename = f"{base_name}.png"  # Assuming mask filename is base_name.png
-#         mask_path = os.path.join(mask_dir, mask_filename)
-
-#         if os.path.exists(mask_path):  # Check if corresponding mask exists
-#             dataset.append({
-#                 "image_path": img_path,
-#                 "mask_path": mask_path
-#             })
-
-# # Convert to DataFrame
-# df = pd.DataFrame(dataset)
-
-# # Save to CSV
-# df.to_csv("pascal_dataset.csv", index=False)
-
-# class ReadDataset(Dataset):
-#     def __init__(self, dataframe, transform=None): 
-#         self.dataframe = dataframe
-#         self.transform = transform
-
-#     def __len__(self):
-#         return len(self.dataframe)
-
-#     def __getitem__(self, index):
-#         img_path = self.dataframe.iloc[index]['image_path']
-#         mask_path = self.dataframe.iloc[index]['mask_path']
-
-#         image = Image.open(img_path).convert("RGB")
-#         mask = Image.open(mask_path).convert("L")
-
-#         return self.transform(image), self.transform(mask)
+    def __getitem__(self, index):
+      with zipfile.ZipFile(self.zip_file, 'r') as z:
+        img_filename = self.images[index]
+        mask_filename = self.masks[index]
+        
+        img_data = z.read(img_filename)
+        mask_data = z.read(mask_filename)
+        
+        image = Image.open(BytesIO(img_data)).convert("RGB")
+        mask = Image.open(BytesIO(mask_data)).convert("L")
+        
+        if self.image_transform:
+          image = self.image_transform(image)
+        if self.mask_transform:
+          mask = self.mask_transform(mask)
+        
+        mask = torch.where(mask > 0, 1, 0).float()
+        
+        return image, mask
 
 
-# df = pd.read_csv('pascal_dataset.csv')
+async def asyncobjectsegmentationtrain(dataset, training_record, model_metadata):
+  # TODO: Fill with Object Segmentation code train code
+  
+  model_name = model_metadata['model_name']
+  model = ''
 
-# tf_func = transforms.Compose([
-#     transforms.Resize((224, 224)),
-# #     transform.Normalize(mean=[0.0,0.0,0.0], std=[1.0,1.0,1.0])
-#     transforms.ToTensor()
-# ])
+  # Todo: Use weights
+  if model_name == 'unet':
+    unet = UNet(in_channels=3, out_channels=1).to(DEVICE)
+    model = unet
+    # model = load_model_weights(model=model, weights_path='')
+  elif model_name == 'deeplab':
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'deeplabv3_resnet50', pretrained=True)
+    model.classifier[4] = nn.Conv2d(256, 3, kernel_size=1)
+    # model = load_model_weights(model=model, weights_path='')
+  elif model_name == 'fcn':
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
+    model.classifier[4] = nn.Conv2d(512, 1, kernel_size=1)  # Change the final layer to output 1 channel
+    # model = load_model_weights(model=model, weights_path='')
 
-# td = ReadDataset(dataframe=df, transform=tf_func)
-# train_loader = DataLoader(
-#     td,
-#     batch_size=1,
-#     num_workers=0,
-#     pin_memory=True,
-#     shuffle=True,
-# )
+  # Prepare the dataset
+  tf_train = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.RandomHorizontalFlip(p=0.1),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.0], std=[1.0])
+  ])
 
-# # initialize early stopping parameters
-# best_score = None
-# no_improve_count = 0
-# patience = 5
-# min_delta = 0.001
+  tf_val_test = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.0], std=[1.0])
+  ])
 
-# # early stopping epoch
-# def early_stopping(current_loss, best_score, no_improve_count):
-#     stop_training = False
-#     if best_score is None:
-#         best_score = current_loss
-#     elif current_loss < best_score - min_delta:
-#         best_score = current_loss
-#         no_improve_count = 0
-#     else:
-#         no_improve_count += 1
-#         if no_improve_count >= patience:
-#             stop_training = True
-#     return stop_training, best_score, no_improve_count
+  td = ReadDataset(zip_file=dataset, image_transform=tf_train, mask_transform=tf_train)
+  total_size = len(td)
+  train_size = int(0.8 * total_size)
+  val_size = total_size - train_size
 
-# # evaluation metrics
-# def calculate_dice_score(preds, y):
-#   smooth = 1e-8  # To avoid division by zero
-#   intersection = (preds * y).sum()
-#   union = (preds + y).sum() + smooth
-#   dice_score = (2 * intersection) / union
-#   return dice_score
+  train_dataset, val_dataset = random_split(td, [train_size, val_size])
 
-# def calculate_accuracy(preds, y):
-#   thresholded_preds = (preds > 0.5).float()  # Apply threshold
-#   correct_predictions = (thresholded_preds == y).sum()
-#   total_pixels = torch.numel(preds)
-#   accuracy = correct_predictions / total_pixels
-#   return accuracy
+  train_dataset = ReadDataset(zip_file=dataset, image_transform=tf_train, mask_transform=tf_train)
+  val_dataset = ReadDataset(zip_file=dataset, image_transform=tf_val_test, mask_transform=tf_val_test)
 
-# def calculate_mean_iou(preds, y, smooth=1e-8):
-#     # Convert probabilities to binary predictions
-#     preds = torch.sigmoid(preds)  # Assuming the output of the model is logits
-#     preds = (preds > 0.5).float()
+  train_loader = DataLoader(
+    train_dataset,
+    batch_size=20,
+    num_workers=2,
+    pin_memory=True,
+    shuffle=True,
+  )
 
-#     # Calculate intersection and union
-#     intersection = (preds * y).sum()
-#     total = (preds + y).sum()
-#     union = total - intersection
+  val_loader = DataLoader(
+    val_dataset,
+    batch_size=20,
+    num_workers=2,
+    pin_memory=True,
+    shuffle=False,
+  )
+  
+  num_pos, num_neg = count_positive_negative_samples(train_loader)
 
-#     # Compute IoU and handle division by zero
-#     iou = (intersection + smooth) / (union + smooth)
-#     return iou
+  set_seed(42)
 
-# def plot_images(data_loader, model, device):
-#     model.eval()  # Set the model to evaluation mode
-#     with torch.no_grad():  # Disable gradient computation
-#         for images, masks in data_loader:  # Assuming the loader provides a batch of images and their corresponding masks
-#             images, masks = images.to(device), masks.to(device)
-#             preds = model(images)  # Get predictions from the model
-#             preds = torch.sigmoid(preds)  # Apply sigmoid to get probabilities
-#             preds = (preds > 0.5).float()  # Threshold the probabilities to get binary predictions
+  pos_weight = num_neg / num_pos
+  pos_weight_tensor = torch.tensor([pos_weight], dtype=torch.float32)
 
-#             images = images.cpu()
-#             masks = masks.cpu()
-#             preds = preds.cpu()
+  bce_weighted = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor).to(DEVICE)
 
-#             figure, ax = plt.subplots(nrows=1, ncols=3, figsize=(12, 4))
-#             for i in range(images.shape[0]):  # Display the first image in the batch
-#                 ax[0].imshow(TF.to_pil_image(images[i]), cmap='gray')
-#                 ax[0].set_title('Original Image')
-#                 ax[0].axis('off')
+  loss_fn = bce_weighted
+  learning_rate = 1e-4
+  optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
 
-#                 ax[1].imshow(TF.to_pil_image(masks[i]), cmap='gray')
-#                 ax[1].set_title('Ground Truth Mask')
-#                 ax[1].axis('off')
+  train_model(
+     model=model,
+     train_loader=train_loader,
+     val_loader=val_loader,
+     optimizer=optimizer,
+     loss_fn=loss_fn,
+     epochs=20,
+     device=DEVICE
+  )
 
-#                 ax[2].imshow(TF.to_pil_image(preds[i]), cmap='gray')
-#                 ax[2].set_title('Predicted Mask')
-#                 ax[2].axis('off')
 
-#                 break  # Only display the first image and mask in the batch for clarity
-#             plt.show()
+def set_seed(seed=42):
+  torch.manual_seed(seed)
+  torch.cuda.manual_seed(seed)
+  np.random.seed(seed)
+  random.seed(seed)
+  torch.backends.cudnn.deterministic = True
+  torch.backends.cudnn.benchmark = False
+
+def load_model_weights(model, weights_path):
+  model.load_state_dict(torch.load(weights_path))
+  return model
+
+def count_positive_negative_samples(data_loader):
+  num_pos = 0
+  num_neg = 0
+
+  for _, masks in data_loader:
+      num_pos += (masks == 1).sum().item()
+      num_neg += (masks == 0).sum().item()
+
+  return num_pos, num_neg
+
+def validate_model(model, val_loader, DEVICE, loss_fn):
+  model.eval()
+  val_loss = 0
+  val_iou = 0
+  val_accuracy = 0
+  val_precision = 0
+  val_recall = 0
+  val_dice = 0
+  total_batches = len(val_loader)
+  
+  with torch.no_grad():
+    for data, targets in val_loader:
+      data, targets = data.to(DEVICE), targets.to(DEVICE)
+
+      # need if-else condition
+      if (isinstance(model, UNet)):
+        predictions = model(data) #unet only
+      predictions = model(data)['out'] 
+      loss = loss_fn(predictions, targets)
+      val_loss += loss.item()
+
+      batch_iou = iou(predictions, targets)
+      batch_accuracy = pixel_metric(predictions, targets)
+      batch_precision = precision(predictions, targets)
+      batch_recall = recall(predictions, targets)
+      batch_dice = dice_metric(predictions, targets)
+      val_iou += batch_iou.item()
+      val_accuracy += batch_accuracy.item()
+      val_precision += batch_precision.item()
+      val_recall += batch_recall.item()
+      val_dice += batch_dice.item()
+
+  val_loss /= total_batches
+  val_accuracy /= total_batches
+  val_iou /= total_batches
+  val_precision /= total_batches
+  val_recall /= total_batches
+  val_dice /= total_batches
+  
+  return val_loss, val_accuracy, val_iou, val_precision, val_recall, val_dice
+
+def train_model(model, train_loader, val_loader, optimizer, loss_fn, epochs, device):
+  best_val_iou = 0.0  # Initialize the best validation IoU score
+  scaler = torch.cuda.amp.GradScaler()
+  start_time = datetime.now()
+  print(f'Starting training at {start_time}')
+
+  for epoch in range(epochs):
+      epoch_iou = 0
+      epoch_accuracy = 0
+      epoch_precision = 0
+      epoch_recall = 0
+      epoch_dice = 0
+
+      loop = tqdm(train_loader)
+      total_batches = len(loop)
+      model.train()
+
+      for batch_idx, (data, targets) in enumerate(loop):
+          data, targets = data.to(device), targets.to(device)
+          with torch.cuda.amp.autocast():
+
+              # need if-else condition
+            if (isinstance(model, UNet)):
+              predictions = model(data) # unet only
+            predictions = model(data)['out'] 
+
+            loss = loss_fn(predictions, targets)
+
+          optimizer.zero_grad()
+          scaler.scale(loss).backward()
+          scaler.step(optimizer)
+          scaler.update()
+
+          # Update metrics
+          epoch_iou += iou(predictions, targets).item()
+          epoch_accuracy += pixel_metric(predictions, targets).item()
+          epoch_precision += precision(predictions, targets).item()
+          epoch_recall += recall(predictions, targets).item()
+          epoch_dice += dice_metric(predictions, targets).item()
+          
+      # Average metrics
+      epoch_iou /= total_batches
+      epoch_accuracy /= total_batches
+      epoch_precision /= total_batches
+      epoch_recall /= total_batches
+      epoch_dice /= total_batches
+      
+
+      # Validate on the validation set
+      val_loss, val_accuracy, val_iou, val_precision, val_recall, val_dice = validate_model(model, val_loader, device, loss_fn)
+      
+
+      print(f"Epoch: {epoch+1}, Train IoU: {epoch_iou:.4f}, Train Accuracy: {epoch_accuracy:.4f}, Train Precision: {epoch_precision:.4f}, Train Recall: {epoch_recall:.4f}, Train Dice: {epoch_dice:.4f}")
+      print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}, Validation IoU: {val_iou:.4f}, Validation Precision: {val_precision:.4f}, Validation Recall: {val_recall:.4f}, Validation Dice: {val_dice:.4f}")
+
+  torch.save(model.state_dict(), f'model/deeplabv3_model.pth')
+  
+  end_time = datetime.now()
+  print(f'Ending training at {end_time}')
+  time_taken = end_time - start_time
+  print(f'Time taken: {time_taken}')

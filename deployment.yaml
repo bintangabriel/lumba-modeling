@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modeling-lumba-app-deployment
+  labels:
+    app: modeling-lumba-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: modeling-lumba-app
+  template:
+    metadata:
+      labels:
+        app: modeling-lumba-app
+    spec:
+      containers:
+      - name: modeling-lumba-app
+        image: bintangabriel/modeling-lumba-app
+        ports:
+        - containerPort: 7000
+        env:
+        - name: BACKEND_SERVICE_INTERNAL_IP
+          value: 127.0.0.1
+        - name: BACKEND_SERVICE_RUNNING_PORT
+          value: 8000
+
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: modeling-lumba-app-service
+spec:
+  selector:
+    app: modeling-lumba-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: modeling-lumba-app
+  type: NodePort
