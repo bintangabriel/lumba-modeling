@@ -1,6 +1,6 @@
 import pandas as pd
 from torchvision import transforms
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 import torch
 from torch.utils.data import DataLoader, random_split
 import numpy as np
@@ -14,7 +14,8 @@ from ml_model.models.unet import UNet
 import os
 import zipfile
 from io import BytesIO
-
+from modeling import settings
+import requests
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -26,65 +27,86 @@ recall = TM.classification.BinaryRecall().to(DEVICE)
 dice_metric = TM.classification.BinaryF1Score().to(DEVICE)
 
 class ReadDataset():
-    def __init__(self, zip_file, image_transform=None, mask_transform=None):
-      self.zip_file = zip_file
-      self.image_transform = image_transform
-      self.mask_transform = mask_transform
-      self.images = []
-      self.masks = []
+  def __init__(self, zip_file, image_transform=None, mask_transform=None):
+    self.zip_file = zip_file
+    self.image_transform = image_transform
+    self.mask_transform = mask_transform
+    self.images = []
+    self.masks = []
 
-      # Filter to include only images with corresponding masks
-      with zipfile.ZipFile(zip_file, 'r') as z:
-        for img_filename in z.namelist():
-          if img_filename.endswith(('.jpg', '.jpeg', '.png')) and 'images/' in img_filename:
-            mask_filename = img_filename.replace('images/', 'masks/').replace('.jpg', '.png').replace('.jpeg', '.png')
-            if mask_filename in z.namelist():
-              self.images.append(img_filename)
-              self.masks.append(mask_filename)
-        
-      print(f"Loaded {len(self.images)} images and {len(self.masks)} masks.")
-    def __len__(self):
-        return len(self.images)
-    
-    def __getitem__(self, index):
-      with zipfile.ZipFile(self.zip_file, 'r') as z:
-        img_filename = self.images[index]
-        mask_filename = self.masks[index]
-        
-        img_data = z.read(img_filename)
-        mask_data = z.read(mask_filename)
-        
+    # Filter to include only images with corresponding masks
+    with zipfile.ZipFile(zip_file, 'r') as z:
+      for img_filename in z.namelist():
+        if img_filename.endswith(('.jpg', '.jpeg', '.png')) and 'images/' in img_filename:
+          self.images.append(img_filename)
+        elif img_filename.endswith(('.jpg', '.jpeg', '.png')) and 'mask/' in img_filename:
+          self.masks.append(img_filename)
+      
+    print(f"Loaded {len(self.images)} images and {len(self.masks)} masks.")
+    # print(f'images: {self.images}')
+  def __len__(self):
+    return len(self.images)
+  
+  def __getitem__(self, index):
+    with zipfile.ZipFile(self.zip_file, 'r') as z:
+      img_filename = self.images[index]
+      mask_filename = self.masks[index]
+      print(f"Index: {index} - Image filename: {img_filename}")
+      print(f"Index: {index} - Mask filename: {mask_filename}")
+      
+      img_data = z.read(img_filename)
+      mask_data = z.read(mask_filename)
+      
+      
+      try:
         image = Image.open(BytesIO(img_data)).convert("RGB")
+      except UnidentifiedImageError as e:
+        print(f"Error loading image {img_filename}: {e}")
+        return None
+      
+      try:
         mask = Image.open(BytesIO(mask_data)).convert("L")
-        
-        if self.image_transform:
-          image = self.image_transform(image)
-        if self.mask_transform:
-          mask = self.mask_transform(mask)
-        
-        mask = torch.where(mask > 0, 1, 0).float()
-        
-        return image, mask
+      except UnidentifiedImageError as e:
+        print(f"Error loading mask {mask_filename}: {e}")
+        return None
+      
+      if self.image_transform:
+        image = self.image_transform(image)
+      if self.mask_transform:
+        mask = self.mask_transform(mask)
+      
+      mask = torch.where(mask > 0, 1, 0).float()
+      
+      return image, mask
 
 
-async def asyncobjectsegmentationtrain(dataset, training_record, model_metadata):
+async def asyncobjectsegmentationtrain(dataset, model_metadata):
   
   # Get model that will be used
-  model_name = model_metadata['model_name']
-  model = ''
+  model_type = model_metadata['model_type']
+  epoch = model_metadata['epoch']
+  learning_rate = model_metadata['learning_rate']
+  print(f'model name: {model_type}')
+  model = None
 
-  # Todo: Use weights
-  if model_name == 'unet':
+  # TODO: Use weights
+  if model_type.startswith('unet'):
     unet = UNet(in_channels=3, out_channels=1).to(DEVICE)
-    model = unet
-    # model = load_model_weights(model=model, weights_path='')
-  elif model_name == 'deeplab':
+    model = unet   
+    base_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    weights_file = os.path.join(base_directory, 'ml_model', 'models', 'weights', 'unet_best_weights.pth')
+
+    print(f'path to unet weight: {weights_file}')
+    model = load_model_weights(model=model, weights_path=weights_file)
+  elif model_type.startswith('deeplab'):
     model = torch.hub.load('pytorch/vision:v0.10.0', 'deeplabv3_resnet50', pretrained=True)
-    model.classifier[4] = nn.Conv2d(256, 3, kernel_size=1)
+    model.classifier[4] = nn.Conv2d(256, 1, kernel_size=1)
+    model = model.to(DEVICE)
     # model = load_model_weights(model=model, weights_path='')
-  elif model_name == 'fcn':
+  elif model_type.startswith('fcn'):
     model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
     model.classifier[4] = nn.Conv2d(512, 1, kernel_size=1)  # Change the final layer to output 1 channel
+    model = model.to(DEVICE)
     # model = load_model_weights(model=model, weights_path='')
 
   # Prepare the dataset
@@ -103,6 +125,7 @@ async def asyncobjectsegmentationtrain(dataset, training_record, model_metadata)
 
   td = ReadDataset(zip_file=dataset, image_transform=tf_train, mask_transform=tf_train)
   total_size = len(td)
+  print(f'total td: {total_size}')
   train_size = int(0.8 * total_size)
   val_size = total_size - train_size
 
@@ -134,10 +157,13 @@ async def asyncobjectsegmentationtrain(dataset, training_record, model_metadata)
   pos_weight = num_neg / num_pos
   pos_weight_tensor = torch.tensor([pos_weight], dtype=torch.float32)
 
-  bce_weighted = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor).to(DEVICE)
+  if model_type.endswith('0'):
+    bce_weighted = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor).to(DEVICE)
+  else:
+    bce_weighted = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor).to(DEVICE)
 
   loss_fn = bce_weighted
-  learning_rate = 1e-4
+  learning_rate = float(learning_rate)
   optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
 
   train_model(
@@ -146,9 +172,12 @@ async def asyncobjectsegmentationtrain(dataset, training_record, model_metadata)
      val_loader=val_loader,
      optimizer=optimizer,
      loss_fn=loss_fn,
-     epochs=20,
-     device=DEVICE
+     epochs=int(epoch),
+     device=DEVICE,
+     metadata=model_metadata
   )
+  url = f'http://{settings.BACKEND_SERVICE_INTERNAL_IP}:{settings.BACKEND_SERVICE_RUNNING_PORT}/modeling/save/'
+  requests.post(url, data=model_metadata)
 
 
 def set_seed(seed=42):
@@ -160,7 +189,13 @@ def set_seed(seed=42):
   torch.backends.cudnn.benchmark = False
 
 def load_model_weights(model, weights_path):
-  model.load_state_dict(torch.load(weights_path))
+  state_dict = torch.load(weights_path)
+  model_state_dict = model.state_dict()
+  filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_state_dict}
+
+  # Update the model’s state dictionary
+  model_state_dict.update(filtered_state_dict)
+  model.load_state_dict(model_state_dict)
   return model
 
 def count_positive_negative_samples(data_loader):
@@ -190,7 +225,8 @@ def validate_model(model, val_loader, DEVICE, loss_fn):
       # need if-else condition
       if (isinstance(model, UNet)):
         predictions = model(data) #unet only
-      predictions = model(data)['out'] 
+      else: 
+        predictions = model(data)['out'] 
       loss = loss_fn(predictions, targets)
       val_loss += loss.item()
 
@@ -214,10 +250,20 @@ def validate_model(model, val_loader, DEVICE, loss_fn):
   
   return val_loss, val_accuracy, val_iou, val_precision, val_recall, val_dice
 
-def train_model(model, train_loader, val_loader, optimizer, loss_fn, epochs, device):
+def train_model(model, train_loader, val_loader, optimizer, loss_fn, epochs, device, metadata):
+
+  model_name = metadata['model_name']
+  username = metadata['username']
+  workspace = metadata['workspace']
+  filename = metadata['filename']
+  id = metadata['id']
+
   best_val_iou = 0.0  # Initialize the best validation IoU score
   scaler = torch.cuda.amp.GradScaler()
   start_time = datetime.now()
+  url = f'http://{settings.BACKEND_SERVICE_INTERNAL_IP}:{settings.BACKEND_SERVICE_RUNNING_PORT}/modeling/updaterecord/'
+  json = {'id': id, 'status':'in progress'}
+  record = requests.post(url, json=json)
   print(f'Starting training at {start_time}')
 
   for epoch in range(epochs):
@@ -238,7 +284,8 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, epochs, dev
               # need if-else condition
             if (isinstance(model, UNet)):
               predictions = model(data) # unet only
-            predictions = model(data)['out'] 
+            else:
+              predictions = model(data)['out'] 
 
             loss = loss_fn(predictions, targets)
 
@@ -269,9 +316,15 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, epochs, dev
       print(f"Epoch: {epoch+1}, Train IoU: {epoch_iou:.4f}, Train Accuracy: {epoch_accuracy:.4f}, Train Precision: {epoch_precision:.4f}, Train Recall: {epoch_recall:.4f}, Train Dice: {epoch_dice:.4f}")
       print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}, Validation IoU: {val_iou:.4f}, Validation Precision: {val_precision:.4f}, Validation Recall: {val_recall:.4f}, Validation Dice: {val_dice:.4f}")
 
-  torch.save(model.state_dict(), f'model/deeplabv3_model.pth')
+  base_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+  weights_file = os.path.join(base_directory, 'ml_model', 'models', 'weights', f'{model_name}_{username}_{workspace}.pth')
+  torch.save(model.state_dict(), weights_file)
   
   end_time = datetime.now()
   print(f'Ending training at {end_time}')
   time_taken = end_time - start_time
   print(f'Time taken: {time_taken}')
+
+  url = f'http://{settings.BACKEND_SERVICE_INTERNAL_IP}:{settings.BACKEND_SERVICE_RUNNING_PORT}/modeling/updaterecord/'
+  json = {'id': id, 'status':'completed'}
+  record = requests.post(url, json=json)

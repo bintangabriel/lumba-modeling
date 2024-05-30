@@ -38,8 +38,6 @@ def get_gpu(request):
     print('gpu list: ', gpu_list)
 
   # Testing purpose
-  gpu_avail = random.randint(1, 5)
-  print(gpu_avail)
 
   data = {
     "total_gpu_available": gpu_avail,

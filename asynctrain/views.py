@@ -157,24 +157,23 @@ async def async_train_endpoint(request):
     except:
       return JsonResponse({'message': "input error"})
       # create training record in main service db
-    url = f'http://{settings.BACKEND_SERVICE_INTERNAL_IP}:{settings.BACKEND_SERVICE_RUNNING_PORT}/modeling/createrecord/'
-    json = {'status':'accepted'}
-    record = requests.post(url, json=json)
-    
-    training_record = {
-      'id' : record.json()['id'],
-      'status' : record.json()['status'],
-    }  
     if (model_metadata['type'] != 'object_segmentation'):
-      df = pd.read_csv(file)
+      url = f'http://{settings.BACKEND_SERVICE_INTERNAL_IP}:{settings.BACKEND_SERVICE_RUNNING_PORT}/modeling/createrecord/'
+      json = {'status':'accepted'}
+      record = requests.post(url, json=json)
+      
+      training_record = {
+        'id' : record.json()['id'],
+        'status' : record.json()['status'],
+      }  
+      df = pd.read_csv(dataset)
       
       asyncio.gather(asynctrain(df, training_record, model_metadata))
       return JsonResponse(training_record)
     else:
-      asyncio.gather(asyncobjectsegmentationtrain(dataset, training_record, model_metadata))
-      print('this is the metadata: ', model_metadata)
-      print(f'this is the file: {request.FILES}')
-      with zipfile.ZipFile(dataset, 'r') as z:
-        for img_filename in z.namelist():
-          print(img_filename)
+      asyncio.gather(asyncobjectsegmentationtrain(dataset, model_metadata))
+      training_record = {
+        'id' : model_metadata['id'],
+        'status' : 'accepted',
+      }  
       return JsonResponse(training_record)
