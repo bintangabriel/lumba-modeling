@@ -8,7 +8,6 @@ from ml_model.models.decision_tree import LumbaDecisionTreeClassifier
 from ml_model.models.random_forest import LumbaRandomForestRegressor
 from ml_model.models.kmeans import LumbaKMeans
 from ml_model.models.arima import LumbaARIMA
-from ml_model.models.lstm import LumbaLSTM
 import requests
 import joblib
 from json import dumps
