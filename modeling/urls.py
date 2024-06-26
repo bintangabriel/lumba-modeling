@@ -18,10 +18,12 @@ from django.urls import include, path
 from asynctrain import urls as train_urls
 from gpu import urls as gpu_urls
 from inference import urls as inference_urls
+from ml_model import urls as ml_model_urls
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('train/', include(train_urls)),
     path('gpu/', include(gpu_urls)),
-    path('inference/', include(inference_urls))
+    path('inference/', include(inference_urls)),
+    path('delete-model/', include(ml_model_urls))
 ]

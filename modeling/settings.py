@@ -126,8 +126,3 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# BACKEND SERVICE URL
-load_dotenv()
-BACKEND_SERVICE_INTERNAL_IP = os.environ.get("BACKEND_SERVICE_INTERNAL_IP")
-BACKEND_SERVICE_RUNNING_PORT = os.environ.get("BACKEND_SERVICE_RUNNING_PORT")

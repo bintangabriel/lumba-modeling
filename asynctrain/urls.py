@@ -3,5 +3,5 @@ from .views import *
 
 urlpatterns = [
     path('', async_train_endpoint),
-    path('forecasting/', async_train_forecasting_endpoint), 
+    path('download/', download_model)
 ]

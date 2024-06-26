@@ -12,7 +12,7 @@ import base64
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-DEVICE = torch.device("cuda")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def inference(model, image, device=DEVICE):
     # Load and preprocess the image
@@ -56,20 +56,20 @@ def object_segmentation_inference(req):
   workspace = model_metadata['workspace']
   model_type = model_metadata['model_type']
 
-  if model_type == 'unet':
-    unet = UNet(in_channels=3, out_channels=1).to(DEVICE)
-    model = unet   
-    base_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    weights_file = os.path.join(base_directory, 'ml_model', 'models', 'weights', 'unet_best_weights.pth')
-
-    model = load_model_weights(model=model, weights_path=weights_file)
-  elif model_type == 'deeplab':
+  if model_type.startswith('50_deeplab'):
     model = torch.hub.load('pytorch/vision:v0.10.0', 'deeplabv3_resnet50', pretrained=True)
     model.classifier[4] = nn.Conv2d(256, 1, kernel_size=1)
     model = model.to(DEVICE)
-    # model = load_model_weights(model=model, weights_path='')
-  elif model_type == 'fcn':
+  elif model_type.startswith('101_deeplab'):
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'deeplabv3_resnet101', pretrained=True)
+    model.classifier[4] = nn.Conv2d(256, 1, kernel_size=1)
+    model = model.to(DEVICE)
+  elif model_type.startswith('50_fcn'):
     model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
+    model.classifier[4] = nn.Conv2d(512, 1, kernel_size=1)  # Change the final layer to output 1 channel
+    model = model.to(DEVICE)
+  elif model_type.startswith('101_fcn'):
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet101', pretrained=True)
     model.classifier[4] = nn.Conv2d(512, 1, kernel_size=1)  # Change the final layer to output 1 channel
     model = model.to(DEVICE)
     # model = load_model_weights(model=model, weights_path='')

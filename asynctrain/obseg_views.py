@@ -16,10 +16,12 @@ import zipfile
 from io import BytesIO
 from modeling import settings
 import requests
+from json import dumps
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-DEVICE = torch.device("cuda")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 iou = TM.classification.BinaryJaccardIndex().to(DEVICE)
 pixel_metric = TM.classification.BinaryAccuracy().to(DEVICE)
 precision = TM.classification.BinaryPrecision().to(DEVICE)
@@ -37,13 +39,15 @@ class ReadDataset():
     # Filter to include only images with corresponding masks
     with zipfile.ZipFile(zip_file, 'r') as z:
       for img_filename in z.namelist():
-        if img_filename.endswith(('.jpg', '.jpeg', '.png')) and 'images/' in img_filename:
-          self.images.append(img_filename)
-        elif img_filename.endswith(('.jpg', '.jpeg', '.png')) and 'mask/' in img_filename:
-          self.masks.append(img_filename)
+        # Skip files starting with ._ and files in __MACOSX directory
+        if (not ('__MACOSX' in img_filename)) and (not (img_filename.startswith('._'))):
+          if img_filename.endswith(('.jpg', '.jpeg', '.png')) and 'images/' in img_filename:
+            self.images.append(img_filename)
+          elif img_filename.endswith(('.jpg', '.jpeg', '.png')) and 'mask/' in img_filename:
+            self.masks.append(img_filename)
+          
+    print(self.masks)
       
-    print(f"Loaded {len(self.images)} images and {len(self.masks)} masks.")
-    # print(f'images: {self.images}')
   def __len__(self):
     return len(self.images)
   
@@ -51,8 +55,6 @@ class ReadDataset():
     with zipfile.ZipFile(self.zip_file, 'r') as z:
       img_filename = self.images[index]
       mask_filename = self.masks[index]
-      print(f"Index: {index} - Image filename: {img_filename}")
-      print(f"Index: {index} - Mask filename: {mask_filename}")
       
       img_data = z.read(img_filename)
       mask_data = z.read(mask_filename)
@@ -89,25 +91,22 @@ async def asyncobjectsegmentationtrain(dataset, model_metadata):
   print(f'model name: {model_type}')
   model = None
 
-  # TODO: Use weights
-  if model_type.startswith('unet'):
-    unet = UNet(in_channels=3, out_channels=1).to(DEVICE)
-    model = unet   
-    base_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    weights_file = os.path.join(base_directory, 'ml_model', 'models', 'weights', 'unet_best_weights.pth')
-
-    print(f'path to unet weight: {weights_file}')
-    model = load_model_weights(model=model, weights_path=weights_file)
-  elif model_type.startswith('deeplab'):
+  if model_type.startswith('50_deeplab'):
     model = torch.hub.load('pytorch/vision:v0.10.0', 'deeplabv3_resnet50', pretrained=True)
     model.classifier[4] = nn.Conv2d(256, 1, kernel_size=1)
     model = model.to(DEVICE)
-    # model = load_model_weights(model=model, weights_path='')
-  elif model_type.startswith('fcn'):
+  elif model_type.startswith('101_deeplab'):
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'deeplabv3_resnet101', pretrained=True)
+    model.classifier[4] = nn.Conv2d(256, 1, kernel_size=1)
+    model = model.to(DEVICE)
+  elif model_type.startswith('50_fcn'):
     model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet50', pretrained=True)
     model.classifier[4] = nn.Conv2d(512, 1, kernel_size=1)  # Change the final layer to output 1 channel
     model = model.to(DEVICE)
-    # model = load_model_weights(model=model, weights_path='')
+  elif model_type.startswith('101_fcn'):
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'fcn_resnet101', pretrained=True)
+    model.classifier[4] = nn.Conv2d(512, 1, kernel_size=1)  # Change the final layer to output 1 channel
+    model = model.to(DEVICE)
 
   # Prepare the dataset
   tf_train = transforms.Compose([
@@ -158,7 +157,7 @@ async def asyncobjectsegmentationtrain(dataset, model_metadata):
   pos_weight_tensor = torch.tensor([pos_weight], dtype=torch.float32)
 
   if model_type.endswith('0'):
-    bce_weighted = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor).to(DEVICE)
+    bce_weighted = nn.BCEWithLogitsLoss().to(DEVICE)
   else:
     bce_weighted = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor).to(DEVICE)
 
@@ -166,18 +165,21 @@ async def asyncobjectsegmentationtrain(dataset, model_metadata):
   learning_rate = float(learning_rate)
   optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
 
-  train_model(
-     model=model,
-     train_loader=train_loader,
-     val_loader=val_loader,
-     optimizer=optimizer,
-     loss_fn=loss_fn,
-     epochs=int(epoch),
-     device=DEVICE,
-     metadata=model_metadata
+  res = train_model(
+    model=model,
+    train_loader=train_loader,
+    val_loader=val_loader,
+    optimizer=optimizer,
+    loss_fn=loss_fn,
+    epochs=int(epoch),
+    device=DEVICE,
+    metadata=model_metadata
   )
-  url = f'http://{settings.BACKEND_SERVICE_INTERNAL_IP}:{settings.BACKEND_SERVICE_RUNNING_PORT}/modeling/save/'
-  requests.post(url, data=model_metadata)
+  
+  data = {**model_metadata, **res}
+  print(data)
+  url = 'https://lumba-provider.vercel.app/modeling/save/'
+  requests.post(url, data=dumps(data))
 
 
 def set_seed(seed=42):
@@ -261,60 +263,68 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, epochs, dev
   best_val_iou = 0.0  # Initialize the best validation IoU score
   scaler = torch.cuda.amp.GradScaler()
   start_time = datetime.now()
-  url = f'http://{settings.BACKEND_SERVICE_INTERNAL_IP}:{settings.BACKEND_SERVICE_RUNNING_PORT}/modeling/updaterecord/'
+  url = f'https://lumba-provider.vercel.app/modeling/updaterecord/'
   json = {'id': id, 'status':'in progress'}
   record = requests.post(url, json=json)
   print(f'Starting training at {start_time}')
 
   for epoch in range(epochs):
-      epoch_iou = 0
-      epoch_accuracy = 0
-      epoch_precision = 0
-      epoch_recall = 0
-      epoch_dice = 0
+    epoch_iou = 0
+    epoch_accuracy = 0
+    epoch_precision = 0
+    epoch_recall = 0
+    epoch_dice = 0
 
-      loop = tqdm(train_loader)
-      total_batches = len(loop)
-      model.train()
+    loop = tqdm(train_loader)
+    total_batches = len(loop)
+    model.train()
 
-      for batch_idx, (data, targets) in enumerate(loop):
-          data, targets = data.to(device), targets.to(device)
-          with torch.cuda.amp.autocast():
+    for batch_idx, (data, targets) in enumerate(loop):
+      data, targets = data.to(device), targets.to(device)
+      with torch.cuda.amp.autocast():
 
-              # need if-else condition
-            if (isinstance(model, UNet)):
-              predictions = model(data) # unet only
-            else:
-              predictions = model(data)['out'] 
+          # need if-else condition
+        if (isinstance(model, UNet)):
+          predictions = model(data) # unet only
+        else:
+          predictions = model(data)['out'] 
 
-            loss = loss_fn(predictions, targets)
+        loss = loss_fn(predictions, targets)
 
-          optimizer.zero_grad()
-          scaler.scale(loss).backward()
-          scaler.step(optimizer)
-          scaler.update()
+      optimizer.zero_grad()
+      scaler.scale(loss).backward()
+      scaler.step(optimizer)
+      scaler.update()
 
-          # Update metrics
-          epoch_iou += iou(predictions, targets).item()
-          epoch_accuracy += pixel_metric(predictions, targets).item()
-          epoch_precision += precision(predictions, targets).item()
-          epoch_recall += recall(predictions, targets).item()
-          epoch_dice += dice_metric(predictions, targets).item()
-          
-      # Average metrics
-      epoch_iou /= total_batches
-      epoch_accuracy /= total_batches
-      epoch_precision /= total_batches
-      epoch_recall /= total_batches
-      epoch_dice /= total_batches
-      
+      # Update metrics
+      epoch_iou += iou(predictions, targets).item()
+      epoch_accuracy += pixel_metric(predictions, targets).item()
+      epoch_precision += precision(predictions, targets).item()
+      epoch_recall += recall(predictions, targets).item()
+      epoch_dice += dice_metric(predictions, targets).item()
+        
+    # Average metrics
+    epoch_iou /= total_batches
+    epoch_accuracy /= total_batches
+    epoch_precision /= total_batches
+    epoch_recall /= total_batches
+    epoch_dice /= total_batches
+    
 
-      # Validate on the validation set
-      val_loss, val_accuracy, val_iou, val_precision, val_recall, val_dice = validate_model(model, val_loader, device, loss_fn)
-      
+    # Validate on the validation set
+    val_loss, val_accuracy, val_iou, val_precision, val_recall, val_dice = validate_model(model, val_loader, device, loss_fn)
+    
 
-      print(f"Epoch: {epoch+1}, Train IoU: {epoch_iou:.4f}, Train Accuracy: {epoch_accuracy:.4f}, Train Precision: {epoch_precision:.4f}, Train Recall: {epoch_recall:.4f}, Train Dice: {epoch_dice:.4f}")
-      print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}, Validation IoU: {val_iou:.4f}, Validation Precision: {val_precision:.4f}, Validation Recall: {val_recall:.4f}, Validation Dice: {val_dice:.4f}")
+    print(f"Epoch: {epoch+1}, Train IoU: {epoch_iou:.4f}, Train Accuracy: {epoch_accuracy:.4f}, Train Precision: {epoch_precision:.4f}, Train Recall: {epoch_recall:.4f}, Train Dice: {epoch_dice:.4f}")
+    print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_accuracy:.4f}, Validation IoU: {val_iou:.4f}, Validation Precision: {val_precision:.4f}, Validation Recall: {val_recall:.4f}, Validation Dice: {val_dice:.4f}")
+
+    if epoch == epochs-1:
+      val_loss = f'{val_loss:4f}'
+      val_accuracy = f'{val_accuracy:.4f}'
+      val_iou = f'{val_iou:.4f}'
+      val_precision = f'{val_precision:.4f}'
+      val_recall = f'{val_recall:.4f}'
+      val_dice = f'{val_dice:.4f}'
 
   base_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
   weights_file = os.path.join(base_directory, 'ml_model', 'models', 'weights', f'{model_name}_{username}_{workspace}.pth')
@@ -325,6 +335,17 @@ def train_model(model, train_loader, val_loader, optimizer, loss_fn, epochs, dev
   time_taken = end_time - start_time
   print(f'Time taken: {time_taken}')
 
-  url = f'http://{settings.BACKEND_SERVICE_INTERNAL_IP}:{settings.BACKEND_SERVICE_RUNNING_PORT}/modeling/updaterecord/'
+
+  url = f'https://lumba-provider.vercel.app/modeling/updaterecord/'
   json = {'id': id, 'status':'completed'}
   record = requests.post(url, json=json)
+  return {
+    'metrics_scores': {
+      'val_loss': val_loss,
+      'val_accuracy': val_accuracy,
+      'iou': val_iou,
+      'val_precision': val_precision,
+      'val_recall': val_recall,
+      'val_dice': val_dice
+    }
+  }
