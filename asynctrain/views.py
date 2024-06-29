@@ -17,13 +17,18 @@ import time
 from .obseg_views import *
 import io
 import zipfile
+from modeling.app_redis import Redis
 
 # this function will return record in json 
 # {'id': 5, 'status': 'accepted'}
 async def async_train_endpoint(request):
   try:
     model_metadata = request.POST.dict()
-    dataset = request.FILES.get('file')
+    r = Redis.get()
+    print(model_metadata['file_key'])
+    dataset = r.get(model_metadata['file_key'])
+    dataset = io.BytesIO(dataset)
+    print(dataset)
     print('metadata: ', model_metadata)
     print('dataset: ', dataset)
   except:
@@ -40,7 +45,8 @@ def download_model(req):
   try:
     model_metadata = json.loads(req.body)
     print(model_metadata)
-  except:
+  except Exception as e:
+    print(e)
     return JsonResponse({'message': "input error"})
   model_name = model_metadata['model_name']
   username = model_metadata['username']
